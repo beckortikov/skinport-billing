@@ -1,0 +1,6 @@
+/server
+*.test
+*.out
+.env
+.claude/
+.DS_Store
