@@ -29,6 +29,8 @@ func NewHandler(items *skinport.Cache, b *billing.Service) http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	mux.HandleFunc("GET /openapi.yaml", serveSpec)
+	mux.HandleFunc("GET /docs", serveDocs)
 	mux.HandleFunc("GET /items", h.listItems)
 	mux.HandleFunc("GET /users/{id}", h.getUser)
 	mux.HandleFunc("GET /users/{id}/withdrawals", h.listWithdrawals)

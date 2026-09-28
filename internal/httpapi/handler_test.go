@@ -40,6 +40,15 @@ func TestWithdrawValidation(t *testing.T) {
 	}
 }
 
+func TestServeSpec(t *testing.T) {
+	rec := httptest.NewRecorder()
+	NewHandler(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil))
+
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Body.String(), "openapi: 3") {
+		t.Fatalf("status = %d, body starts with %.20q", rec.Code, rec.Body)
+	}
+}
+
 func TestHistoryLimitValidation(t *testing.T) {
 	h := NewHandler(nil, nil)
 

@@ -1,0 +1,250 @@
+openapi: 3.0.3
+info:
+  title: skinport-billing
+  version: 1.0.0
+  description: |
+    Skinport item prices and user balance withdrawals.
+
+    Money fields have the `_cents` suffix and are integers in cents (`10000` = $100.00).
+tags:
+  - name: items
+  - name: billing
+
+paths:
+  /items:
+    get:
+      tags: [items]
+      summary: List Skinport items with min tradable and non-tradable prices
+      description: |
+        Items for `app_id=730`, `currency=EUR`. Cached in memory for `ITEMS_CACHE_TTL` (5m by default).
+        If Skinport is unavailable, previously cached data is returned.
+      operationId: listItems
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Item"
+        "502":
+          description: Skinport is unavailable and the cache is empty
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /users/{id}:
+    get:
+      tags: [billing]
+      summary: Get user balance
+      operationId: getUser
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /users/{id}/withdrawals:
+    post:
+      tags: [billing]
+      summary: Withdraw from user balance
+      description: Debits the balance and records the operation. The balance never goes below zero.
+      operationId: withdraw
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawRequest"
+      responses:
+        "201":
+          description: Withdrawn
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Withdrawal"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Insufficient funds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: insufficient funds
+    get:
+      tags: [billing]
+      summary: List withdrawal history, newest first
+      operationId: listWithdrawals
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Withdrawal"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /healthz:
+    get:
+      summary: Liveness probe
+      operationId: healthz
+      responses:
+        "200":
+          description: OK
+
+components:
+  parameters:
+    UserID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+      example: 1
+
+  responses:
+    BadRequest:
+      description: Invalid path, query or body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: amount_cents must be positive
+    NotFound:
+      description: User not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: user not found
+
+  schemas:
+    Item:
+      type: object
+      required: [market_hash_name, currency, item_page, market_page]
+      properties:
+        market_hash_name:
+          type: string
+          example: "'Blueberries' Buckshot | NSWC SEAL"
+        version:
+          type: string
+          nullable: true
+          description: Item variant, e.g. Doppler phase
+          example: null
+        currency:
+          type: string
+          example: EUR
+        suggested_price:
+          type: number
+          nullable: true
+          example: 13.38
+        item_page:
+          type: string
+          format: uri
+        market_page:
+          type: string
+          format: uri
+        min_price_tradable:
+          type: number
+          nullable: true
+          description: Null if there are no tradable listings
+          example: 11.11
+        min_price_non_tradable:
+          type: number
+          nullable: true
+          description: Null if there are no trade-locked listings
+          example: 9.66
+
+    User:
+      type: object
+      required: [id, balance_cents]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        balance_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 100000
+
+    WithdrawRequest:
+      type: object
+      required: [amount_cents]
+      additionalProperties: false
+      properties:
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 10000
+
+    Withdrawal:
+      type: object
+      required: [id, user_id, amount_cents, balance_before_cents, balance_after_cents, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        user_id:
+          type: integer
+          format: int64
+          example: 1
+        amount_cents:
+          type: integer
+          format: int64
+          example: 10000
+        balance_before_cents:
+          type: integer
+          format: int64
+          example: 100000
+        balance_after_cents:
+          type: integer
+          format: int64
+          example: 90000
+        created_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

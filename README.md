@@ -1,5 +1,7 @@
 # skinport-billing
 
+[![CI](https://github.com/beckortikov/skinport-billing/actions/workflows/ci.yml/badge.svg)](https://github.com/beckortikov/skinport-billing/actions/workflows/ci.yml)
+
 HTTP-сервис на Go: цены предметов Skinport и списание баланса пользователя.
 Стек: Go, PostgreSQL, [pgx](https://github.com/jackc/pgx) без ORM, стандартный `net/http`.
 
@@ -34,6 +36,9 @@ DATABASE_URL='postgres://postgres@localhost:5432/skinport?sslmode=disable' go ru
 | `ITEMS_CACHE_TTL` | нет         | `5m`         | TTL кеша предметов Skinport (`time.Duration`) |
 
 ## API
+
+Спецификация OpenAPI 3 — [`api/openapi.yaml`](api/openapi.yaml). Запущенный сервис отдаёт её
+по `/openapi.yaml`, а Swagger UI доступен на http://localhost:8080/docs.
 
 Денежные поля имеют суффикс `_cents` и передаются целыми числами в центах (`10000` = $100.00). Ошибки возвращаются как `{"error": "..."}`.
 
@@ -140,9 +145,13 @@ TEST_DATABASE_URL='postgres://postgres@localhost:5432/skinport_test?sslmode=disa
 Среди них — 50 конкурентных списаний: проверяется, что баланс не ушёл в минус и цепочка
 «было → стало» в истории не разорвана.
 
+CI (GitHub Actions) на каждый пуш проверяет `gofmt`, `go vet`, гоняет все тесты с Postgres
+и собирает Docker-образ.
+
 ## Структура
 
 ```
+api                 OpenAPI-спецификация
 cmd/server          точка входа, конфиг, graceful shutdown
 internal/skinport   клиент Skinport API, склейка цен, кеш
 internal/billing    баланс и история списаний
