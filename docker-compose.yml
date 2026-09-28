@@ -1,3 +1,5 @@
+name: skinport-billing
+
 services:
   postgres:
     image: postgres:17-alpine
