@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	defaultHistoryLimit = 50
-	maxHistoryLimit     = 500
+	defaultHistoryLimit  = 50
+	maxHistoryLimit      = 500
+	maxIdempotencyKeyLen = 255
 )
 
 type handler struct {
@@ -107,8 +108,13 @@ func (h *handler) withdraw(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "amount_cents must be positive")
 		return
 	}
+	key := r.Header.Get("Idempotency-Key")
+	if len(key) > maxIdempotencyKeyLen {
+		writeError(w, http.StatusBadRequest, "Idempotency-Key must be at most 255 bytes")
+		return
+	}
 
-	wd, err := h.billing.Withdraw(r.Context(), userID, req.Amount)
+	wd, err := h.billing.Withdraw(r.Context(), userID, req.Amount, key)
 	if err != nil {
 		writeBillingError(w, err)
 		return
@@ -133,6 +139,8 @@ func writeBillingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, billing.ErrInvalidAmount):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, billing.ErrIdempotencyKey):
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
 	default:
 		slog.Error("billing operation failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")

@@ -46,7 +46,7 @@ func TestWithdraw(t *testing.T) {
 	svc, _ := setup(t, 10000)
 	ctx := context.Background()
 
-	w, err := svc.Withdraw(ctx, 1, 2500)
+	w, err := svc.Withdraw(ctx, 1, 2500, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestWithdrawErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := svc.Withdraw(ctx, tt.userID, tt.amount); !errors.Is(err, tt.want) {
+			if _, err := svc.Withdraw(ctx, tt.userID, tt.amount, ""); !errors.Is(err, tt.want) {
 				t.Fatalf("err = %v, want %v", err, tt.want)
 			}
 		})
@@ -116,7 +116,7 @@ func TestWithdrawConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	for range attempts {
 		wg.Go(func() {
-			_, err := svc.Withdraw(ctx, 1, amount)
+			_, err := svc.Withdraw(ctx, 1, amount, "")
 			switch {
 			case err == nil:
 				succeeded.Add(1)
@@ -164,5 +164,72 @@ func TestWithdrawalsUnknownUser(t *testing.T) {
 
 	if _, err := svc.Withdrawals(context.Background(), 999, 10); !errors.Is(err, billing.ErrUserNotFound) {
 		t.Fatalf("err = %v, want ErrUserNotFound", err)
+	}
+}
+
+// Retries of one request may arrive while the first is still in flight.
+// Exactly one of them debits; all of them get the same withdrawal back.
+func TestWithdrawIdempotentConcurrentRetries(t *testing.T) {
+	const retries = 20
+	svc, pool := setup(t, 10000)
+	ctx := context.Background()
+
+	ids := make(chan int64, retries)
+	var wg sync.WaitGroup
+	for range retries {
+		wg.Go(func() {
+			w, err := svc.Withdraw(ctx, 1, 2500, "order-42")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			ids <- w.ID
+		})
+	}
+	wg.Wait()
+	close(ids)
+
+	first := <-ids
+	for id := range ids {
+		if id != first {
+			t.Fatalf("retries returned different withdrawals: %d and %d", first, id)
+		}
+	}
+
+	u, err := svc.User(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var records int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM withdrawals`).Scan(&records); err != nil {
+		t.Fatal(err)
+	}
+	if u.Balance != 7500 || records != 1 {
+		t.Fatalf("balance = %d, records = %d; want 7500 and 1", u.Balance, records)
+	}
+}
+
+func TestWithdrawIdempotencyKey(t *testing.T) {
+	svc, _ := setup(t, 2500)
+	ctx := context.Background()
+
+	first, err := svc.Withdraw(ctx, 1, 2500, "order-42")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The first attempt used up the balance: the retry must still succeed.
+	retry, err := svc.Withdraw(ctx, 1, 2500, "order-42")
+	if err != nil || retry != first {
+		t.Fatalf("retry = %+v, %v; want %+v", retry, err, first)
+	}
+
+	if _, err := svc.Withdraw(ctx, 1, 100, "order-42"); !errors.Is(err, billing.ErrIdempotencyKey) {
+		t.Fatalf("err = %v, want ErrIdempotencyKey", err)
+	}
+
+	// A new key is a new operation.
+	if _, err := svc.Withdraw(ctx, 1, 2500, "order-43"); !errors.Is(err, billing.ErrInsufficientFunds) {
+		t.Fatalf("err = %v, want ErrInsufficientFunds", err)
 	}
 }
