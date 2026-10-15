@@ -58,10 +58,21 @@ paths:
     post:
       tags: [billing]
       summary: Withdraw from user balance
-      description: Debits the balance and records the operation. The balance never goes below zero.
+      description: |
+        Debits the balance and records the operation. The balance never goes below zero.
+        Send an `Idempotency-Key` to make retries safe: a repeated request with the same key
+        returns the original withdrawal and doesn't debit again.
       operationId: withdraw
       parameters:
         - $ref: "#/components/parameters/UserID"
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Client-generated unique key of the operation, e.g. a UUID. Scoped to the user.
+          schema:
+            type: string
+            maxLength: 255
+          example: 5f0c6a8e-3b9d-4c2e-9a51-7d2b8e4f1c3a
       requestBody:
         required: true
         content:
@@ -87,6 +98,14 @@ paths:
                 $ref: "#/components/schemas/Error"
               example:
                 error: insufficient funds
+        "422":
+          description: Idempotency-Key was already used for a different amount
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: idempotency key was already used for a different amount
     get:
       tags: [billing]
       summary: List withdrawal history, newest first

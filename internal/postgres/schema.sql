@@ -17,4 +17,9 @@ CREATE TABLE IF NOT EXISTS withdrawals (
 
 CREATE INDEX IF NOT EXISTS withdrawals_user_id_id_idx ON withdrawals (user_id, id DESC);
 
+-- Client-supplied key of a withdrawal: a retried request with the same key
+-- must not debit the balance twice. NULLs are distinct, so it stays optional.
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS withdrawals_user_id_idempotency_key_key ON withdrawals (user_id, idempotency_key);
+
 INSERT INTO users (id, balance) VALUES (1, 100000) ON CONFLICT (id) DO NOTHING;

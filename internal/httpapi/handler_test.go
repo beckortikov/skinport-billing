@@ -40,6 +40,17 @@ func TestWithdrawValidation(t *testing.T) {
 	}
 }
 
+func TestIdempotencyKeyValidation(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/users/1/withdrawals", strings.NewReader(`{"amount_cents":100}`))
+	req.Header.Set("Idempotency-Key", strings.Repeat("k", 256))
+	rec := httptest.NewRecorder()
+	NewHandler(nil, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+	}
+}
+
 func TestServeSpec(t *testing.T) {
 	rec := httptest.NewRecorder()
 	NewHandler(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil))
